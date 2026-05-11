@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+* { box-sizing: border-box; }
+body { margin: 0; background: #f8fafc; color: #111827; }
+a { color: inherit; text-decoration: none; }
+button, input, select { font: inherit; }
+.focus-ring { @apply focus:outline-none focus:ring-2 focus:ring-brand-600 focus:ring-offset-2; }

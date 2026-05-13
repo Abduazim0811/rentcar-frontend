@@ -9,6 +9,7 @@ import { cars as fallbackCars, rentals as fallbackRentals } from '../lib/data';
 import { money, shortDate } from '../lib/utils';
 import { useAsync } from '../hooks/useAsync';
 import type { Invoice, Notification, PaymentMethod, Rental } from '../types';
+import { CalendarDays, Mail, Phone, ShieldCheck, UserCircle } from 'lucide-react';
 
 export function DashboardPage() { const { data: rentals } = useAsync(myRentals, fallbackRentals); const { data: cars } = useAsync(listCars, fallbackCars); return <><SiteHeader /><main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"><div className="mb-6 flex items-center justify-between"><div><h1 className="text-3xl font-bold">User dashboard</h1><p className="text-muted">Track active rentals, payment status, and find your next car.</p></div><LinkButton href="/cars">Browse cars</LinkButton></div><div className="mb-6 grid gap-4 md:grid-cols-4"><Card className="p-5"><p className="text-sm text-muted">Active rentals</p><strong className="text-3xl">{rentals.filter((r) => r.status === 'confirmed').length}</strong></Card><Card className="p-5"><p className="text-sm text-muted">Pending payments</p><strong className="text-3xl">{rentals.filter((r) => r.payment?.status === 'pending').length}</strong></Card><Card className="p-5"><p className="text-sm text-muted">Total rentals</p><strong className="text-3xl">{rentals.length}</strong></Card><Card className="p-5"><p className="text-sm text-muted">Available cars</p><strong className="text-3xl">{cars.filter((c) => c.status === 'available').length}</strong></Card></div><RentalTable rentals={rentals} /></main></>; }
 export function MyRentalsPage() { const { data: rentals } = useAsync(myRentals, fallbackRentals); return <><SiteHeader /><main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"><h1 className="mb-2 text-3xl font-bold">My rentals</h1><p className="mb-6 text-muted">All rentals with booking and payment status.</p><RentalTable rentals={rentals} /></main></>; }
@@ -97,8 +98,10 @@ export function NotificationsPage() {
 export function ProfilePage() {
   const navigate = useNavigate();
   const storedUser = currentUser();
+  const [profile, setProfile] = useState(storedUser);
   const [name, setName] = useState(storedUser?.name ?? '');
   const [email, setEmail] = useState(storedUser?.email ?? '');
+  const [phone, setPhone] = useState(storedUser?.phone ?? '');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -106,8 +109,10 @@ export function ProfilePage() {
   useEffect(() => {
     getProfile().then((user) => {
       saveUser(user);
+      setProfile(user);
       setName(user.name);
       setEmail(user.email);
+      setPhone(user.phone ?? '');
     }).catch(() => undefined);
   }, []);
 
@@ -117,8 +122,9 @@ export function ProfilePage() {
     setError('');
     setMessage('');
     try {
-      const user = await updateProfile({ name, email });
+      const user = await updateProfile({ name, email, phone });
       saveUser(user);
+      setProfile(user);
       setMessage('Profile updated successfully.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update profile');
@@ -133,5 +139,7 @@ export function ProfilePage() {
     navigate('/login');
   }
 
-  return <><SiteHeader /><main className="mx-auto max-w-3xl px-4 py-8"><div className="mb-6 flex items-center justify-between gap-4"><div><h1 className="text-3xl font-bold">Profile settings</h1><p className="text-muted">Update your account details and session.</p></div><Button type="button" variant="secondary" onClick={signOut}>Logout</Button></div><Card className="p-5"><form onSubmit={save} className="space-y-4"><label className="text-sm font-semibold">Full name<Input value={name} onChange={(event) => setName(event.target.value)} required /></label><label className="text-sm font-semibold">Email<Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required /></label>{message && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>}{error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Button disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</Button></form></Card></main></>;
+  const initials = (profile?.name || 'User').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+
+  return <><SiteHeader /><main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8"><div className="mb-6 flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-3xl font-bold">Profile settings</h1><p className="text-muted">Keep your contact details ready for rental approvals and handover calls.</p></div><Button type="button" variant="secondary" onClick={signOut}>Logout</Button></div><div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]"><Card className="p-5"><div className="flex items-center gap-4"><div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xl font-bold text-white">{initials}</div><div className="min-w-0"><h2 className="truncate text-xl font-bold">{profile?.name ?? 'User'}</h2><p className="text-sm capitalize text-muted">{(profile?.role ?? 'customer').replace('_', ' ')}</p></div></div><div className="mt-6 space-y-4 text-sm"><div className="flex gap-3"><Mail className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /><div className="min-w-0"><p className="font-semibold">Email</p><p className="break-all text-muted">{profile?.email ?? email}</p></div></div><div className="flex gap-3"><Phone className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /><div><p className="font-semibold">Phone</p><p className="text-muted">{profile?.phone || 'Not provided'}</p></div></div><div className="flex gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /><div><p className="font-semibold">Email status</p><p className="text-muted">{profile?.email_verified_at ? 'Verified' : 'Pending verification'}</p></div></div><div className="flex gap-3"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /><div><p className="font-semibold">Account</p><p className="text-muted">Ready for bookings and notifications</p></div></div></div></Card><Card className="p-5"><div className="mb-5 flex items-center gap-3"><UserCircle className="h-5 w-5 text-brand-600" /><div><h2 className="font-bold">Contact information</h2><p className="text-sm text-muted">Admins use this phone number when confirming rentals.</p></div></div><form onSubmit={save} className="grid gap-4 md:grid-cols-2"><label className="text-sm font-semibold">Full name<Input value={name} onChange={(event) => setName(event.target.value)} required /></label><label className="text-sm font-semibold">Phone number<Input value={phone} onChange={(event) => setPhone(event.target.value)} type="tel" placeholder="+998 90 123 45 67" /></label><label className="text-sm font-semibold md:col-span-2">Email<Input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required /></label>{message && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 md:col-span-2">{message}</p>}{error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 md:col-span-2">{error}</p>}<div className="flex flex-wrap gap-2 md:col-span-2"><Button disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</Button><Button type="button" variant="secondary" onClick={() => { setName(profile?.name ?? ''); setEmail(profile?.email ?? ''); setPhone(profile?.phone ?? ''); }}>Reset</Button></div></form></Card></div></main></>;
 }

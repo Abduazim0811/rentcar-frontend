@@ -60,7 +60,7 @@ export default function App() {
     <Route path="/admin/reports" element={<RequireAdmin><AdminReportsPage /></RequireAdmin>} />
     <Route path="/admin/maintenance" element={<RequireAdmin><AdminMaintenancePage /></RequireAdmin>} />
     <Route path="/admin/audit-logs" element={<RequireSuperAdmin><AdminAuditLogsPage /></RequireSuperAdmin>} />
-    <Route path="/admin/users" element={<RequireSuperAdmin><AdminUsersPage /></RequireSuperAdmin>} />
+    <Route path="/admin/users" element={<RequireAdmin><AdminUsersPage /></RequireAdmin>} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;
 }

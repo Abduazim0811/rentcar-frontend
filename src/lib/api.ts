@@ -95,7 +95,7 @@ export function checkCarAvailability(carId: number, startDate: string, endDate: 
 export function getAvailabilityCalendar(carId: number, month: string) { return request<AvailabilityCalendar>('/availability/cars/' + carId + '/calendar?month=' + encodeURIComponent(month)); }
 export async function getCar(id: number) { try { return await request<Car>('/cars/' + id); } catch { return cars.find((car) => car.id === id) ?? cars[0]; } }
 export function login(email: string, password: string) { return request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); }
-export function register(name: string, email: string, password: string) { return request<EmailVerificationResponse>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }); }
+export function register(name: string, email: string, phone: string, password: string) { return request<EmailVerificationResponse>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, phone, password }) }); }
 export function verifyEmail(email: string, code: string) { return request<AuthResponse>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) }); }
 export function resendVerification(email: string) { return request<EmailVerificationResponse>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }); }
 export function logoutSession() {
@@ -104,7 +104,7 @@ export function logoutSession() {
   return request<{ logged_out: boolean }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: token }) }, false);
 }
 export function getProfile() { return request<User>('/users/me'); }
-export function updateProfile(input: { name: string; email: string }) { return request<User>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }); }
+export function updateProfile(input: { name: string; email: string; phone: string }) { return request<User>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }); }
 export function logoutAllSessions() { return request<{ logged_out: boolean }>('/users/logout-all', { method: 'POST' }); }
 export function createPayment(input: { rental_id: number; method: PaymentMethod }) { return request<Payment>('/payments', { method: 'POST', body: JSON.stringify(input) }); }
 export function confirmPayment(id: number) { return request<{ paid: boolean }>('/admin/payments/' + id + '/confirm', { method: 'POST' }); }

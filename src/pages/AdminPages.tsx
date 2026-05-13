@@ -7,6 +7,7 @@ import { approveRental, confirmPayment, createCar, createMaintenance, deleteCar,
 import { cars as fallbackCars, rentals as fallbackRentals, admin, superAdmin, user } from '../lib/data';
 import { money, shortDate } from '../lib/utils';
 import { useAsync } from '../hooks/useAsync';
+import { currentUser } from '../lib/auth';
 import type { AuditLog, Maintenance, MaintenanceStatus, PaginatedAuditLogs, PaginatedMaintenance, PaginatedRentals, PaginatedUsers, PaymentStatus, Rental, RentalStatus, ReportSummary, User, UserRole, Car, CarStatus } from '../types';
 
 const rentalStatusOptions: RentalStatus[] = ['requested', 'approved', 'rejected', 'pending_payment', 'confirmed', 'active', 'cancelled', 'completed'];
@@ -405,6 +406,8 @@ export function AdminRentalDetailPage() {
 }
 
 export function AdminUsersPage() {
+  const viewer = currentUser();
+  const canManageRoles = viewer?.role === 'super_admin';
   const [result, setResult] = useState<PaginatedUsers>({ items: [superAdmin, admin, user], total: 3, page: 1, page_size: 10, total_pages: 1 });
   const [savingId, setSavingId] = useState<number | null>(null);
   const [error, setError] = useState('');
@@ -431,6 +434,7 @@ export function AdminUsersPage() {
   }
 
   async function changeRole(target: User, role: UserRole) {
+    if (!canManageRoles) return;
     setSavingId(target.id);
     setError('');
     try {
@@ -446,10 +450,10 @@ export function AdminUsersPage() {
   return <AdminShell>
     <div className="mb-6">
       <h1 className="text-3xl font-bold">Manage users</h1>
-      <p className="text-muted">Super admin can promote users, assign admins, and control access.</p>
+      <p className="text-muted">Review customer contact details and account access.</p>
     </div>
     <Card className="mb-4 grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_220px_auto]">
-      <Input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search name or email" />
+      <Input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search name, email or phone" />
       <Select value={role} onChange={(e) => { setRole(e.target.value as 'all' | UserRole); setPage(1); }}>
         <option value="all">All roles</option>
         {userRoleOptions.map((value) => <option key={value} value={value}>{value.replace('_', ' ')}</option>)}
@@ -461,13 +465,13 @@ export function AdminUsersPage() {
     <div className="overflow-hidden rounded-lg border border-line bg-white">
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-          <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Access</th></tr>
+          <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Access</th></tr>
         </thead>
         <tbody className="divide-y divide-line">
           {result.items.map((u) => <tr key={u.id}>
             <td className="px-4 py-3 font-semibold">{u.name}</td>
-            <td className="px-4 py-3">{u.email}</td>
-            <td className="px-4 py-3"><Select value={u.role} onChange={(e) => changeRole(u, e.target.value as UserRole)} disabled={savingId === u.id}>{userRoleOptions.map((role) => <option key={role} value={role}>{role.replace('_', ' ')}</option>)}</Select></td>
+            <td className="px-4 py-3"><div className="space-y-1"><p className="break-all">{u.email}</p><p className="text-xs text-muted">{u.phone || 'No phone number'}</p></div></td>
+            <td className="px-4 py-3"><Select value={u.role} onChange={(e) => changeRole(u, e.target.value as UserRole)} disabled={!canManageRoles || savingId === u.id}>{userRoleOptions.map((role) => <option key={role} value={role}>{role.replace('_', ' ')}</option>)}</Select></td>
             <td className="px-4 py-3"><StatusBadge value={u.role === 'customer' ? 'inactive' : 'available'} /></td>
           </tr>)}
         </tbody>

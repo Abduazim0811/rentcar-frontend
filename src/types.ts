@@ -1,5 +1,5 @@
 export type UserRole = 'customer' | 'admin' | 'super_admin';
-export type User = { id: number; name: string; email: string; role: UserRole };
+export type User = { id: number; name: string; email: string; phone?: string; role: UserRole; email_verified_at?: string };
 export type CarStatus = 'available' | 'rented' | 'maintenance' | 'inactive';
 export type Car = { id: number; brand: string; model: string; year: number; plate_number: string; daily_rate: number; status: CarStatus; image?: string; seats?: number; fuel?: string; transmission?: string };
 export type RentalStatus = 'requested' | 'approved' | 'rejected' | 'pending_payment' | 'confirmed' | 'active' | 'cancelled' | 'completed';

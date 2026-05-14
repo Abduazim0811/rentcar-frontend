@@ -1,41 +1,68 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { HomePage, CarsPage, CarDetailPage, RentPage } from './pages/PublicPages';
 import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { DashboardPage, MyRentalsPage, NotificationsPage, ProfilePage, RentalDetailPage } from './pages/DashboardPages';
 import { AdminAuditLogsPage, AdminCarsPage, AdminDashboard, AdminMaintenancePage, AdminRentalDetailPage, AdminRentalsPage, AdminReportsPage, AdminUsersPage, EditCarPage, NewCarPage } from './pages/AdminPages';
-import { accessToken, currentUser, logout } from './lib/auth';
-import type { UserRole } from './types';
+import { getProfile } from './lib/api';
+import { accessToken, currentUser, logout, saveUser } from './lib/auth';
+import type { User, UserRole } from './types';
 
 function hasAdminAccess(role?: UserRole) { return role === 'admin' || role === 'super_admin'; }
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
+function RequireRole({ children, admin = false, superAdmin = false }: { children: React.ReactNode; admin?: boolean; superAdmin?: boolean }) {
   const location = useLocation();
-  const user = currentUser();
-  if (!user || !accessToken()) {
+  const [user, setUser] = useState<User | null>(currentUser());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    if (!accessToken()) {
+      logout();
+      setLoading(false);
+      setUser(null);
+      return;
+    }
+
+    getProfile()
+      .then((profile) => {
+        if (!alive) return;
+        saveUser(profile);
+        setUser(profile);
+      })
+      .catch(() => {
+        if (!alive) return;
+        logout();
+        setUser(null);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+
+    return () => { alive = false; };
+  }, [location.pathname]);
+
+  if (!accessToken()) {
     logout();
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
+  if (loading) return <div className="mx-auto max-w-7xl px-4 py-10 text-slate-600">Checking session...</div>;
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (superAdmin && user.role !== 'super_admin') return <Navigate to="/admin" replace />;
+  if (admin && !hasAdminAccess(user.role)) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  return <RequireRole>{children}</RequireRole>;
+}
+
 function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const user = currentUser();
-  if (!user || !accessToken()) {
-    logout();
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
-  }
-  return hasAdminAccess(user?.role) ? children : <Navigate to="/dashboard" replace />;
+  return <RequireRole admin>{children}</RequireRole>;
 }
 
 function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const user = currentUser();
-  if (!user || !accessToken()) {
-    logout();
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
-  }
-  return user?.role === 'super_admin' ? children : <Navigate to="/admin" replace />;
+  return <RequireRole superAdmin>{children}</RequireRole>;
 }
 
 export default function App() {

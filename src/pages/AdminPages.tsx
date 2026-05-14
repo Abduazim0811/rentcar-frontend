@@ -2,9 +2,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AdminShell } from '../components/layout';
 import { Button, Card, Input, LinkButton, Select } from '../components/ui';
-import { RentalTable, StatusBadge } from '../components/domain';
+import { CarIdentity, RentalTable, StatusBadge, UserIdentity } from '../components/domain';
 import { approveRental, confirmPayment, createCar, createMaintenance, deleteCar, deleteMaintenance, failPayment, getCar, getRental, getReportSummary, listAdminRentals, listAdminRentalsPage, listAuditLogs, listCars, listMaintenance, listUsersPage, refundPayment, rejectRental, updateCar, updateMaintenance, updateRentalStatus, updateUserRole, uploadCarImage } from '../lib/api';
-import { cars as fallbackCars, rentals as fallbackRentals, admin, superAdmin, user } from '../lib/data';
 import { money, shortDate } from '../lib/utils';
 import { useAsync } from '../hooks/useAsync';
 import { currentUser } from '../lib/auth';
@@ -13,8 +12,24 @@ import type { AuditLog, Maintenance, MaintenanceStatus, PaginatedAuditLogs, Pagi
 const rentalStatusOptions: RentalStatus[] = ['requested', 'approved', 'rejected', 'pending_payment', 'confirmed', 'active', 'cancelled', 'completed'];
 const paymentStatusOptions: PaymentStatus[] = ['pending', 'paid', 'failed', 'refunded'];
 const carStatusOptions: CarStatus[] = ['available', 'maintenance', 'inactive'];
+const fuelOptions = ['Petrol', 'Diesel', 'Hybrid', 'Electric', 'Gas'];
+const transmissionOptions = ['Automatic', 'Manual'];
 const userRoleOptions: UserRole[] = ['customer', 'admin', 'super_admin'];
 const maintenanceStatusOptions: MaintenanceStatus[] = ['scheduled', 'in_progress', 'completed', 'cancelled'];
+
+function canSetRentalStatus(rental: Rental, status: RentalStatus) {
+  if (status === rental.status) return true;
+  const hasOpenPayment = rental.payment?.status === 'pending' || rental.payment?.status === 'paid';
+  if (status === 'requested') return false;
+  if (status === 'approved') return ['requested', 'rejected', 'cancelled'].includes(rental.status) && !hasOpenPayment;
+  if (status === 'rejected') return ['requested', 'approved'].includes(rental.status) && !hasOpenPayment;
+  if (status === 'cancelled') return rental.status !== 'completed' && !hasOpenPayment;
+  if (status === 'pending_payment') return false;
+  if (status === 'confirmed') return false;
+  if (status === 'active') return rental.payment?.status === 'paid' && rental.status === 'confirmed';
+  if (status === 'completed') return rental.payment?.status === 'paid' && rental.status === 'active';
+  return false;
+}
 
 type CarFormState = {
   brand: string;
@@ -22,6 +37,9 @@ type CarFormState = {
   year: string;
   plate_number: string;
   daily_rate: string;
+  seats: string;
+  fuel: string;
+  transmission: string;
   status: CarStatus;
   image: string;
 };
@@ -32,6 +50,9 @@ const emptyCarForm: CarFormState = {
   year: '2024',
   plate_number: '',
   daily_rate: '50',
+  seats: '5',
+  fuel: 'Petrol',
+  transmission: 'Automatic',
   status: 'available',
   image: '', 
 };
@@ -43,14 +64,17 @@ function toCarForm(car: Car): CarFormState {
     year: String(car.year),
     plate_number: car.plate_number,
     daily_rate: String(car.daily_rate),
+    seats: String(car.seats ?? 5),
+    fuel: car.fuel ?? 'Petrol',
+    transmission: car.transmission ?? 'Automatic',
     status: car.status,
     image: car.image ?? '', 
   };
 }
 
 export function AdminDashboard() {
-  const { data: cars } = useAsync(listCars, fallbackCars);
-  const { data: rentals } = useAsync(listAdminRentals, fallbackRentals);
+  const { data: cars } = useAsync(listCars, [] as Car[]);
+  const { data: rentals } = useAsync(listAdminRentals, [] as Rental[]);
 
   return <AdminShell>
     <div className="mb-6 flex items-center justify-between gap-4">
@@ -71,7 +95,7 @@ export function AdminDashboard() {
 }
 
 export function AdminCarsPage() {
-  const [cars, setCars] = useState<Car[]>(fallbackCars);
+  const [cars, setCars] = useState<Car[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => { listCars().then(setCars).catch((err) => setError(err instanceof Error ? err.message : 'Could not load cars')); }, []);
@@ -157,6 +181,9 @@ function CarForm({ mode }: { mode: 'new' | 'edit' }) {
       year: Number(form.year),
       plate_number: form.plate_number.trim(),
       daily_rate: Number(form.daily_rate),
+      seats: Number(form.seats),
+      fuel: form.fuel.trim(),
+      transmission: form.transmission.trim(),
       status: form.status,
       image: form.image.trim(),
     };
@@ -178,6 +205,9 @@ function CarForm({ mode }: { mode: 'new' | 'edit' }) {
       <label className="text-sm font-semibold">Year<Input type="number" min={1900} value={form.year} onChange={(e) => update('year', e.target.value)} required disabled={loading} /></label>
       <label className="text-sm font-semibold">Plate number<Input value={form.plate_number} onChange={(e) => update('plate_number', e.target.value.toUpperCase())} placeholder="01A777AA" required disabled={loading} /></label>
       <label className="text-sm font-semibold">Daily rate<Input type="number" min={1} step="0.01" value={form.daily_rate} onChange={(e) => update('daily_rate', e.target.value)} required disabled={loading} /></label>
+      <label className="text-sm font-semibold">Seats<Input type="number" min={1} max={12} value={form.seats} onChange={(e) => update('seats', e.target.value)} required disabled={loading} /></label>
+      <label className="text-sm font-semibold">Fuel<Select value={form.fuel} onChange={(e) => update('fuel', e.target.value)} disabled={loading}>{fuelOptions.map((fuel) => <option key={fuel} value={fuel}>{fuel}</option>)}</Select></label>
+      <label className="text-sm font-semibold">Transmission<Select value={form.transmission} onChange={(e) => update('transmission', e.target.value)} disabled={loading}>{transmissionOptions.map((value) => <option key={value} value={value}>{value}</option>)}</Select></label>
       <label className="text-sm font-semibold">Status<Select value={form.status} onChange={(e) => update('status', e.target.value as CarStatus)} disabled={loading}>{carStatusOptions.map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}</Select></label>
       <label className="text-sm font-semibold md:col-span-2">Car image<Input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(e) => uploadImage(e.target.files?.[0])} disabled={loading || uploading} /><span className="mt-1 block text-xs font-normal text-muted">{uploading ? 'Uploading image...' : 'JPG, PNG, WebP or GIF, max 5 MB'}</span></label>
       <label className="text-sm font-semibold md:col-span-2">Image URL<Input value={form.image} onChange={(e) => update('image', e.target.value)} placeholder="Upload an image or paste URL" disabled={loading || uploading} /></label>
@@ -194,7 +224,7 @@ export function NewCarPage() { return <AdminShell><h1 className="mb-6 text-3xl f
 export function EditCarPage() { return <AdminShell><h1 className="mb-6 text-3xl font-bold">Edit car</h1><CarForm mode="edit" /></AdminShell>; }
 
 export function AdminRentalsPage() {
-  const [result, setResult] = useState<PaginatedRentals>({ items: fallbackRentals, total: fallbackRentals.length, page: 1, page_size: 10, total_pages: 1 });
+  const [result, setResult] = useState<PaginatedRentals>({ items: [], total: 0, page: 1, page_size: 10, total_pages: 1 });
   const [savingId, setSavingId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [status, setStatusFilter] = useState<'all' | RentalStatus>('all');
@@ -296,16 +326,17 @@ export function AdminRentalsPage() {
     <div className="overflow-hidden rounded-lg border border-line bg-white">
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-          <tr><th className="px-4 py-3">Rental</th><th className="px-4 py-3">Car</th><th className="px-4 py-3">Dates</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr>
+          <tr><th className="px-4 py-3">Rental</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Car</th><th className="px-4 py-3">Dates</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Action</th></tr>
         </thead>
         <tbody className="divide-y divide-line">
           {result.items.map((rental) => <tr key={rental.id}>
             <td className="px-4 py-3 font-semibold">#{rental.id}</td>
-            <td className="px-4 py-3">{rental.car ? rental.car.brand + ' ' + rental.car.model : 'Car #' + rental.car_id}</td>
+            <td className="px-4 py-3"><UserIdentity rental={rental} /></td>
+            <td className="px-4 py-3"><CarIdentity car={rental.car} carId={rental.car_id} /></td>
             <td className="px-4 py-3">{shortDate(rental.start_date)} - {shortDate(rental.end_date)}</td>
             <td className="px-4 py-3">{money(rental.total_amount)}</td>
             <td className="px-4 py-3">{rental.payment ? <div className="space-y-1"><StatusBadge value={rental.payment.status} /><p className="text-xs capitalize text-muted">{rental.payment.method.replace('_', ' ')}</p></div> : <StatusBadge value="none" />}</td>
-            <td className="px-4 py-3"><Select value={rental.status} onChange={(e) => changeStatus(rental, e.target.value as RentalStatus)} disabled={savingId === rental.id}>{rentalStatusOptions.map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}</Select></td>
+            <td className="px-4 py-3"><Select value={rental.status} onChange={(e) => changeStatus(rental, e.target.value as RentalStatus)} disabled={savingId === rental.id}>{rentalStatusOptions.map((status) => <option key={status} value={status} disabled={!canSetRentalStatus(rental, status)}>{status.replace('_', ' ')}</option>)}</Select></td>
             <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-2"><Link className="font-semibold text-brand-600" to={'/admin/rentals/' + rental.id}>View</Link>{rental.status === 'requested' && <><button className="font-semibold text-green-700 disabled:text-slate-400" type="button" disabled={savingId === rental.id} onClick={() => reviewRental(rental, 'approve')}>Approve</button><button className="font-semibold text-red-700 disabled:text-slate-400" type="button" disabled={savingId === rental.id} onClick={() => reviewRental(rental, 'reject')}>Reject</button></>}{rental.payment?.status === 'pending' && <><button className="font-semibold text-green-700 disabled:text-slate-400" type="button" disabled={savingId === rental.id} onClick={() => settlePayment(rental, 'confirm')}>Confirm</button><button className="font-semibold text-red-700 disabled:text-slate-400" type="button" disabled={savingId === rental.id} onClick={() => settlePayment(rental, 'fail')}>Fail</button></>}{rental.payment?.status === 'paid' && <button className="font-semibold text-blue-700 disabled:text-slate-400" type="button" disabled={savingId === rental.id} onClick={() => settlePayment(rental, 'refund')}>Refund</button>}</div></td>
           </tr>)}
         </tbody>
@@ -382,10 +413,10 @@ export function AdminRentalDetailPage() {
       </div>
       {error && <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <strong>User #{rental.user_id}</strong>
-        <strong>{rental.car ? rental.car.brand + ' ' + rental.car.model : 'Car #' + rental.car_id}</strong>
-        <strong>{shortDate(rental.start_date)} - {shortDate(rental.end_date)}</strong>
-        <strong>{money(rental.total_amount)}</strong>
+        <div><p className="text-sm text-muted">Customer</p><UserIdentity rental={rental} /></div>
+        <div><p className="text-sm text-muted">Car</p><CarIdentity car={rental.car} carId={rental.car_id} /></div>
+        <div><p className="text-sm text-muted">Dates</p><strong>{shortDate(rental.start_date)} - {shortDate(rental.end_date)}</strong></div>
+        <div><p className="text-sm text-muted">Total</p><strong>{money(rental.total_amount)}</strong></div>
       </div>
       <div className="mt-6 rounded-md border border-line bg-slate-50 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -399,7 +430,7 @@ export function AdminRentalDetailPage() {
       </div>
       <div className="mt-6 flex flex-wrap gap-2">
         {rental.status === 'requested' && <><Button type="button" variant="secondary" onClick={() => review('approve')}>Approve request</Button><Button type="button" variant="danger" onClick={() => review('reject')}>Reject request</Button></>}
-        {actions.map((status) => <Button key={status} type="button" variant={status === 'cancelled' ? 'danger' : 'secondary'} onClick={() => setStatus(status)}>{status.replace('_', ' ')}</Button>)}
+        {actions.map((status) => <Button key={status} type="button" variant={status === 'cancelled' ? 'danger' : 'secondary'} disabled={!canSetRentalStatus(rental, status)} onClick={() => setStatus(status)}>{status.replace('_', ' ')}</Button>)}
       </div>
     </Card>
   </AdminShell>;
@@ -408,7 +439,7 @@ export function AdminRentalDetailPage() {
 export function AdminUsersPage() {
   const viewer = currentUser();
   const canManageRoles = viewer?.role === 'super_admin';
-  const [result, setResult] = useState<PaginatedUsers>({ items: [superAdmin, admin, user], total: 3, page: 1, page_size: 10, total_pages: 1 });
+  const [result, setResult] = useState<PaginatedUsers>({ items: [], total: 0, page: 1, page_size: 10, total_pages: 1 });
   const [savingId, setSavingId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -509,13 +540,16 @@ export function AdminReportsPage() {
 
 export function AdminMaintenancePage() {
   const [result, setResult] = useState<PaginatedMaintenance>({ items: [], total: 0, page: 1, page_size: 10, total_pages: 1 });
+  const [cars, setCars] = useState<Car[]>([]);
   const [form, setForm] = useState({ car_id: '', start_date: '', end_date: '', reason: '', status: 'scheduled' as MaintenanceStatus, notes: '' });
   const [editing, setEditing] = useState<Maintenance | null>(null);
   const [error, setError] = useState('');
+  const carById = useMemo(() => new Map(cars.map((car) => [car.id, car])), [cars]);
 
   async function load() {
     try {
       setResult(await listMaintenance({ page_size: 50 }));
+      setCars(await listCars());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load maintenance');
     }
@@ -549,7 +583,7 @@ export function AdminMaintenancePage() {
     await load();
   }
 
-  return <AdminShell><h1 className="mb-2 text-3xl font-bold">Maintenance</h1><p className="mb-6 text-muted">Schedule maintenance windows and block availability.</p>{error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Card className="mb-6 p-5"><form onSubmit={submit} className="grid gap-3 md:grid-cols-3"><Input value={form.car_id} onChange={(event) => setForm({ ...form, car_id: event.target.value })} type="number" min={1} placeholder="Car ID" required /><Input value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} type="date" required /><Input value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} type="date" required /><Input value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Reason" required /><Select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as MaintenanceStatus })}>{maintenanceStatusOptions.map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}</Select><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes" /><div className="flex gap-2 md:col-span-3"><Button>{editing ? 'Save maintenance' : 'Add maintenance'}</Button>{editing && <Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel edit</Button>}</div></form></Card><div className="overflow-hidden rounded-lg border border-line bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Car</th><th className="px-4 py-3">Dates</th><th className="px-4 py-3">Reason</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Actions</th></tr></thead><tbody className="divide-y divide-line">{result.items.map((item) => <tr key={item.id}><td className="px-4 py-3">Car #{item.car_id}</td><td className="px-4 py-3">{shortDate(item.start_date)} - {shortDate(item.end_date)}</td><td className="px-4 py-3">{item.reason}</td><td className="px-4 py-3"><StatusBadge value={item.status} /></td><td className="px-4 py-3"><div className="flex gap-2"><button className="font-semibold text-brand-600" onClick={() => edit(item)} type="button">Edit</button><button className="font-semibold text-red-700" onClick={() => remove(item.id)} type="button">Delete</button></div></td></tr>)}</tbody></table></div></AdminShell>;
+  return <AdminShell><h1 className="mb-2 text-3xl font-bold">Maintenance</h1><p className="mb-6 text-muted">Schedule maintenance windows and block availability.</p>{error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Card className="mb-6 p-5"><form onSubmit={submit} className="grid gap-3 md:grid-cols-3"><Select value={form.car_id} onChange={(event) => setForm({ ...form, car_id: event.target.value })} required><option value="">Select car</option>{cars.map((car) => <option key={car.id} value={car.id}>{car.brand} {car.model} - {car.plate_number}</option>)}</Select><Input value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} type="date" required /><Input value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} type="date" required /><Input value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Reason" required /><Select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as MaintenanceStatus })}>{maintenanceStatusOptions.map((status) => <option key={status} value={status}>{status.replace('_', ' ')}</option>)}</Select><Input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Notes" /><div className="flex gap-2 md:col-span-3"><Button>{editing ? 'Save maintenance' : 'Add maintenance'}</Button>{editing && <Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel edit</Button>}</div></form></Card><div className="overflow-hidden rounded-lg border border-line bg-white"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Car</th><th className="px-4 py-3">Dates</th><th className="px-4 py-3">Reason</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Actions</th></tr></thead><tbody className="divide-y divide-line">{result.items.map((item) => <tr key={item.id}><td className="px-4 py-3"><CarIdentity car={carById.get(item.car_id)} carId={item.car_id} /></td><td className="px-4 py-3">{shortDate(item.start_date)} - {shortDate(item.end_date)}</td><td className="px-4 py-3">{item.reason}</td><td className="px-4 py-3"><StatusBadge value={item.status} /></td><td className="px-4 py-3"><div className="flex gap-2"><button className="font-semibold text-brand-600" onClick={() => edit(item)} type="button">Edit</button><button className="font-semibold text-red-700" onClick={() => remove(item.id)} type="button">Delete</button></div></td></tr>)}</tbody></table></div></AdminShell>;
 }
 
 export function AdminAuditLogsPage() {

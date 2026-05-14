@@ -27,6 +27,7 @@ export function refreshToken() {
 
 export function saveSession(token: string, user: User, refresh?: string) {
   localStorage.setItem('rent_car_token', token);
+  localStorage.removeItem('rent_car_refresh_token');
   if (refresh) localStorage.setItem('rent_car_refresh_token', refresh);
   localStorage.setItem('rent_car_user', JSON.stringify(user));
 }

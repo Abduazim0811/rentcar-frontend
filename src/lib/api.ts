@@ -1,6 +1,5 @@
 import type { AuditFilters, AvailabilityCalendar, AuthResponse, Car, CarAvailability, CarFilters, EmailVerificationResponse, Invoice, Maintenance, MaintenanceFilters, Notification, PaginatedAuditLogs, PaginatedCars, PaginatedMaintenance, PaginatedRentals, PaginatedUsers, Payment, PaymentMethod, Rental, RentalFilters, RentalStatus, ReportSummary, User, UserFilters, UserRole } from '../types';
 import { accessToken, logout as clearSession, refreshToken, saveSession } from './auth';
-import { admin, cars, rentals, superAdmin, user } from './data';
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
 type Envelope<T> = { data?: T; error?: string };
 export type UploadedImage = { object_name: string; url: string; content_type: string; size: number };
@@ -9,22 +8,23 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   headers.set('Content-Type', 'application/json');
   const token = accessToken();
   if (token) headers.set('Authorization', 'Bearer ' + token);
-  const res = await fetch(API + path, { ...init, headers });
+  const res = await fetch(API + path, { ...init, headers, credentials: 'include' });
   if (res.status === 401 && retry && await refreshSession()) return request<T>(path, init, false);
-  const body = await res.json() as Envelope<T>;
+  const body = await parseEnvelope<T>(res);
   if (!res.ok) throw new Error(body.error ?? 'Request failed');
   return body.data as T;
 }
 async function refreshSession() {
   const token = refreshToken();
-  if (!token) return false;
   try {
-    const res = await fetch(API + '/auth/refresh', {
+    const init: RequestInit = {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: token }),
-    });
-    const body = await res.json() as Envelope<AuthResponse>;
+    };
+    if (token) init.body = JSON.stringify({ refresh_token: token });
+    const res = await fetch(API + '/auth/refresh', init);
+    const body = await parseEnvelope<AuthResponse>(res);
     if (!res.ok || !body.data) throw new Error(body.error ?? 'Refresh failed');
     saveSession(body.data.access_token || body.data.token, body.data.user, body.data.refresh_token);
     return true;
@@ -32,6 +32,11 @@ async function refreshSession() {
     clearSession();
     return false;
   }
+}
+async function parseEnvelope<T>(res: Response): Promise<Envelope<T>> {
+  const text = await res.text();
+  if (!text) return {};
+  return JSON.parse(text) as Envelope<T>;
 }
 function carQuery(filters: CarFilters = {}) {
   const params = new URLSearchParams();
@@ -86,22 +91,21 @@ function auditQuery(filters: AuditFilters = {}) {
   const query = params.toString();
   return query ? '?' + query : '';
 }
-export async function listCarsPage(filters: CarFilters = {}) {
-  try { return await request<PaginatedCars>('/cars' + carQuery(filters)); }
-  catch { return { items: cars, total: cars.length, page: 1, page_size: cars.length, total_pages: 1 }; }
-}
+export function listCarsPage(filters: CarFilters = {}) { return request<PaginatedCars>('/cars' + carQuery(filters)); }
 export async function listCars(filters: CarFilters = {}) { const page = await listCarsPage(filters); return page.items; }
 export function checkCarAvailability(carId: number, startDate: string, endDate: string) { return request<CarAvailability>('/availability/cars/' + carId + '?start_date=' + encodeURIComponent(startDate) + '&end_date=' + encodeURIComponent(endDate)); }
 export function getAvailabilityCalendar(carId: number, month: string) { return request<AvailabilityCalendar>('/availability/cars/' + carId + '/calendar?month=' + encodeURIComponent(month)); }
-export async function getCar(id: number) { try { return await request<Car>('/cars/' + id); } catch { return cars.find((car) => car.id === id) ?? cars[0]; } }
+export function getCar(id: number) { return request<Car>('/cars/' + id); }
 export function login(email: string, password: string) { return request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); }
 export function register(name: string, email: string, phone: string, password: string) { return request<EmailVerificationResponse>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, phone, password }) }); }
 export function verifyEmail(email: string, code: string) { return request<AuthResponse>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) }); }
 export function resendVerification(email: string) { return request<EmailVerificationResponse>('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }); }
 export function logoutSession() {
   const token = refreshToken();
-  if (!token) return Promise.resolve({ logged_out: true });
-  return request<{ logged_out: boolean }>('/auth/logout', { method: 'POST', body: JSON.stringify({ refresh_token: token }) }, false);
+  return request<{ logged_out: boolean }>('/auth/logout', {
+    method: 'POST',
+    body: token ? JSON.stringify({ refresh_token: token }) : undefined,
+  }, false);
 }
 export function getProfile() { return request<User>('/users/me'); }
 export function updateProfile(input: { name: string; email: string; phone: string }) { return request<User>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }); }
@@ -111,11 +115,12 @@ export function confirmPayment(id: number) { return request<{ paid: boolean }>('
 export function failPayment(id: number) { return request<{ failed: boolean }>('/admin/payments/' + id + '/fail', { method: 'POST' }); }
 export function refundPayment(id: number) { return request<{ refunded: boolean }>('/admin/payments/' + id + '/refund', { method: 'POST' }); }
 export function createRental(input: { car_id: number; start_date: string; end_date: string }) { return request<Rental>('/rentals', { method: 'POST', body: JSON.stringify(input) }); }
-export async function myRentals() { try { return await request<Rental[]>('/rentals/me'); } catch { return rentals; } }
-export async function getRental(id: number) { try { return await request<Rental>('/rentals/' + id); } catch { return rentals.find((rental) => rental.id === id) ?? rentals[0]; } }
+export function myRentals() { return request<Rental[]>('/rentals/me'); }
+export function getRental(id: number) { return request<Rental>('/rentals/' + id); }
 export function cancelRental(id: number) { return request<{ cancelled: boolean }>('/rentals/' + id + '/cancel', { method: 'POST' }); }
 export function getInvoice(rentalId: number) { return request<Invoice>('/rentals/' + rentalId + '/invoice'); }
 export function listNotifications(unreadOnly = false) { return request<Notification[]>('/notifications' + (unreadOnly ? '?unread=true' : '')); }
+export function getUnreadNotificationCount() { return request<{ count: number }>('/notifications/unread-count'); }
 export function markNotificationRead(id: number) { return request<{ read: boolean }>('/notifications/' + id + '/read', { method: 'POST' }); }
 
 export async function uploadCarImage(file: File) {
@@ -124,8 +129,8 @@ export async function uploadCarImage(file: File) {
   const headers = new Headers();
   const token = localStorage.getItem('rent_car_token');
   if (token) headers.set('Authorization', 'Bearer ' + token);
-  const res = await fetch(API + '/admin/uploads/images', { method: 'POST', headers, body: form });
-  const body = await res.json() as Envelope<UploadedImage>;
+  const res = await fetch(API + '/admin/uploads/images', { method: 'POST', headers, body: form, credentials: 'include' });
+  const body = await parseEnvelope<UploadedImage>(res);
   if (!res.ok) throw new Error(body.error ?? 'Image upload failed');
   return body.data as UploadedImage;
 }
@@ -134,10 +139,7 @@ export function createCar(input: Partial<Car>) { return request<Car>('/admin/car
 export function updateCar(id: number, input: Partial<Car>) { return request<Car>('/admin/cars/' + id, { method: 'PUT', body: JSON.stringify(input) }); }
 export function deleteCar(id: number) { return request<{ deleted: boolean }>('/admin/cars/' + id, { method: 'DELETE' }); }
 
-export async function listAdminRentalsPage(filters: RentalFilters = {}) {
-  try { return await request<PaginatedRentals>('/admin/rentals' + rentalQuery(filters)); }
-  catch { return { items: rentals, total: rentals.length, page: 1, page_size: rentals.length, total_pages: 1 }; }
-}
+export function listAdminRentalsPage(filters: RentalFilters = {}) { return request<PaginatedRentals>('/admin/rentals' + rentalQuery(filters)); }
 export async function listAdminRentals(filters: RentalFilters = {}) { const page = await listAdminRentalsPage({ page_size: 100, ...filters }); return page.items; }
 export function updateRentalStatus(id: number, status: RentalStatus) { return request<{ updated: boolean }>('/admin/rentals/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status }) }); }
 export function approveRental(id: number) { return request<Rental>('/admin/rentals/' + id + '/approve', { method: 'POST' }); }
@@ -157,10 +159,6 @@ export function updateMaintenance(id: number, input: Partial<Maintenance>) { ret
 export function deleteMaintenance(id: number) { return request<{ deleted: boolean }>('/admin/maintenance/' + id, { method: 'DELETE' }); }
 export function listAuditLogs(filters: AuditFilters = {}) { return request<PaginatedAuditLogs>('/admin/audit-logs' + auditQuery(filters)); }
 
-export async function listUsersPage(filters: UserFilters = {}) {
-  const fallback = [superAdmin, admin, user];
-  try { return await request<PaginatedUsers>('/admin/users' + userQuery(filters)); }
-  catch { return { items: fallback, total: fallback.length, page: 1, page_size: fallback.length, total_pages: 1 }; }
-}
+export function listUsersPage(filters: UserFilters = {}) { return request<PaginatedUsers>('/admin/users' + userQuery(filters)); }
 export async function listUsers(filters: UserFilters = {}) { const page = await listUsersPage({ page_size: 100, ...filters }); return page.items; }
 export function updateUserRole(id: number, role: UserRole) { return request<{ updated: boolean }>('/admin/users/' + id + '/role', { method: 'PATCH', body: JSON.stringify({ role }) }); }

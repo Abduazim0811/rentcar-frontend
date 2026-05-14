@@ -11,6 +11,7 @@ function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
   const [saving, setSaving] = useState(false);
   const redirectTo = typeof location.state?.from === 'string' ? location.state.from : '';
 
@@ -35,11 +36,13 @@ function AuthForm({ mode }: { mode: 'login' | 'register' }) {
 
       const res = await register(String(f.get('name')), email, String(f.get('phone')), String(f.get('password')));
       setPendingEmail(res.email);
+      setVerificationCode('');
       setNotice('Verification code sent. Check your email and enter the code.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Authentication failed';
       if (mode === 'login' && message === 'email is not verified') {
         setPendingEmail(email);
+        setVerificationCode('');
         setNotice('Email is not verified. Enter your code or request a new one.');
       } else {
         setError(message);
@@ -54,9 +57,8 @@ function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     setSaving(true);
     setError('');
     setNotice('');
-    const f = new FormData(e.currentTarget);
     try {
-      const res = await verifyEmail(pendingEmail, String(f.get('code')));
+      const res = await verifyEmail(pendingEmail, verificationCode.trim());
       saveSession(res.access_token || res.token, res.user, res.refresh_token);
       redirectAfterLogin(res.user.role);
     } catch (err) {
@@ -81,10 +83,10 @@ function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   }
 
   if (pendingEmail) {
-    return <Card className="mx-auto max-w-md p-6"><form onSubmit={submitVerification} className="space-y-4"><div><h1 className="text-2xl font-bold">Confirm email</h1><p className="text-sm text-muted">Code sent to {pendingEmail}.</p></div><label className="text-sm font-semibold">Verification code<Input name="code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required disabled={saving} /></label>{notice && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</p>}{error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Button className="w-full" disabled={saving}>{saving ? 'Please wait...' : 'Verify email'}</Button><Button type="button" variant="secondary" className="w-full" disabled={saving} onClick={resendCode}>Resend code</Button><p className="text-center text-sm text-muted"><button type="button" className="font-semibold text-brand-600" onClick={() => setPendingEmail('')}>Use another email</button></p></form></Card>;
+    return <Card className="mx-auto max-w-md p-6"><form onSubmit={submitVerification} className="space-y-4" autoComplete="off"><div><h1 className="text-2xl font-bold">Confirm email</h1><p className="text-sm text-muted">Code sent to {pendingEmail}.</p></div><label className="text-sm font-semibold">Verification code<Input name="verification_code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="123456" required disabled={saving} autoFocus /></label>{notice && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</p>}{error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Button className="w-full" disabled={saving}>{saving ? 'Please wait...' : 'Verify email'}</Button><Button type="button" variant="secondary" className="w-full" disabled={saving} onClick={resendCode}>Resend code</Button><p className="text-center text-sm text-muted"><button type="button" className="font-semibold text-brand-600" onClick={() => { setPendingEmail(''); setVerificationCode(''); }}>Use another email</button></p></form></Card>;
   }
 
-  return <Card className="mx-auto max-w-md p-6"><form onSubmit={submit} className="space-y-4"><div><h1 className="text-2xl font-bold capitalize">{mode}</h1><p className="text-sm text-muted">{mode === 'login' ? 'Welcome back to RentCar.' : 'Create an account to book cars.'}</p></div>{mode === 'register' && <label className="text-sm font-semibold">Full name<Input name="name" required disabled={saving} /></label>}{mode === 'register' && <label className="text-sm font-semibold">Phone number<Input name="phone" type="tel" placeholder="+998 90 123 45 67" disabled={saving} /></label>}<label className="text-sm font-semibold">Email<Input name="email" type="email" required disabled={saving} /></label><label className="text-sm font-semibold">Password<Input name="password" type="password" required minLength={6} disabled={saving} /></label>{notice && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</p>}{error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Button className="w-full" disabled={saving}>{saving ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create account'}</Button><p className="text-center text-sm text-muted">{mode === 'login' ? <>No account? <Link className="font-semibold text-brand-600" to="/register">Register</Link></> : <>Already registered? <Link className="font-semibold text-brand-600" to="/login">Login</Link></>}</p></form></Card>;
+  return <Card className="mx-auto max-w-md p-6"><form onSubmit={submit} className="space-y-4">{mode === 'register' && <div className="hidden" aria-hidden="true"><Input name="verification_code" autoComplete="one-time-code" tabIndex={-1} /></div>}<div><h1 className="text-2xl font-bold capitalize">{mode}</h1><p className="text-sm text-muted">{mode === 'login' ? 'Welcome back to RentCar.' : 'Create an account to book cars.'}</p></div>{mode === 'register' && <label className="text-sm font-semibold">Full name<Input name="name" autoComplete="name" required disabled={saving} /></label>}{mode === 'register' && <label className="text-sm font-semibold">Phone number<Input name="phone" type="tel" autoComplete="tel" placeholder="+998 90 123 45 67" disabled={saving} /></label>}<label className="text-sm font-semibold">Email<Input name="email" type="email" autoComplete="email" required disabled={saving} /></label><label className="text-sm font-semibold">Password<Input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={6} disabled={saving} /></label>{notice && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{notice}</p>}{error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}<Button className="w-full" disabled={saving}>{saving ? 'Please wait...' : mode === 'login' ? 'Login' : 'Create account'}</Button><p className="text-center text-sm text-muted">{mode === 'login' ? <>No account? <Link className="font-semibold text-brand-600" to="/register">Register</Link></> : <>Already registered? <Link className="font-semibold text-brand-600" to="/login">Login</Link></>}</p></form></Card>;
 }
 export function LoginPage() { return <><SiteHeader /><main className="px-4 py-12"><AuthForm mode="login" /></main></>; }
 export function RegisterPage() { return <><SiteHeader /><main className="px-4 py-12"><AuthForm mode="register" /></main></>; }
